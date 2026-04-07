@@ -13,6 +13,21 @@ number of triangles with a common edge in a graph*, C. R. Acad. Bulgare Sci. **3
 1315-1318.
 
 [BoNi04] B. Bollobás and V. Nikiforov, *Books in graphs*, arXiv:math/0405080, Eur. J. Combin.
+
+## Proof roadmap
+
+For a graph `G` on `n` vertices, write `t(e)` for the number of triangles through
+an edge `e`, and `β` for the maximum of `t(e)` over all edges.
+
+The formalization follows the Bollobás-Nikiforov route:
+
+1. Prove a soft degree inequality for each edge, giving the easy case
+   `n ≤ 3β`.
+2. In the hard case, count "concordant" pairs `(T, y)` of a triangle `T` and a
+   vertex `y`, obtaining the Khadžiivanov-Nikiforov inequality.
+3. Combine that inequality with Cauchy-Schwarz, the handshaking lemma, and the
+   Turán bound `m > n^2 / 4` to deduce `n < 6β`.
+4. Choose an edge attaining `β`.
 -/
 
 open SimpleGraph
@@ -191,6 +206,9 @@ The sum of triangle-degrees is `3` times the number of triangles.
 lemma sum_triangleDegree_eq_three_mul_cliqueFinset [DecidableEq V]
     (G : SimpleGraph V) [DecidableRel G.Adj] :
     ∑ e ∈ G.edgeFinset, triangleDegree G e = 3 * (G.cliqueFinset 3).card := by
+  -- Count incidences `(edge of a triangle)` in two ways:
+  -- once by summing the number of common neighbors of each edge,
+  -- and once by observing that every triangle contributes exactly three edges.
   unfold triangleDegree
   simp +decide [SimpleGraph.cliqueFinset]
   convert Finset.sum_congr rfl fun e he => ?_
@@ -313,6 +331,67 @@ lemma edge_endpoint_degree_sum_eq_sum_sq
       ∑ v : V, G.degree v ^ 2 := by
   simp +decide [edge_endpoint_degree_sum_eq_neighbor_sum, pow_two]
 
+/--
+For a fixed edge `e = s(u, v)`, the number of vertices whose adjacency pattern to
+`u, v` is concordant is at most `n + 2t(e) - d(u) - d(v)`.
+
+This is the finite-set version of the inclusion-exclusion estimate used in the
+Bollobás-Nikiforov counting argument.
+-/
+lemma concordant_vertex_count_le_card_add_two_mul_triangleDegree_sub_degree [DecidableEq V]
+    (G : SimpleGraph V) [DecidableRel G.Adj] (e : Sym2 V) :
+    (Finset.filter
+        (fun y =>
+          y ∈ G.commonNeighbors e.out.1 e.out.2 ∨
+            (¬G.Adj y e.out.1 ∧ ¬G.Adj y e.out.2))
+        (Finset.univ : Finset V)).card ≤
+      Fintype.card V + 2 * triangleDegree G e -
+        G.degree e.out.1 - G.degree e.out.2 := by
+  have concordant_split_bound :
+      (Finset.filter
+          (fun y =>
+            y ∈ G.commonNeighbors e.out.1 e.out.2 ∨
+              (¬G.Adj y e.out.1 ∧ ¬G.Adj y e.out.2))
+          (Finset.univ : Finset V)).card ≤
+        (Finset.univ : Finset V).card -
+          (Finset.filter (fun y => G.Adj y e.out.1 ∨ G.Adj y e.out.2)
+            (Finset.univ : Finset V)).card +
+          (Finset.filter (fun y => y ∈ G.commonNeighbors e.out.1 e.out.2)
+            (Finset.univ : Finset V)).card := by
+    rw [tsub_add_eq_add_tsub]
+    · refine' le_tsub_of_add_le_left _
+      rw [← Finset.card_union_add_card_inter]
+      refine' add_le_add _ _
+      · exact Finset.card_le_univ _
+      · refine' Finset.card_le_card _
+        intro y hy
+        aesop
+    · exact Finset.card_le_univ _
+  have union_neighbors_card_ge :
+      (Finset.filter (fun y => G.Adj y e.out.1 ∨ G.Adj y e.out.2)
+        (Finset.univ : Finset V)).card ≥
+        G.degree e.out.1 + G.degree e.out.2 -
+          (Finset.filter (fun y => y ∈ G.commonNeighbors e.out.1 e.out.2)
+            (Finset.univ : Finset V)).card := by
+    have union_inclusion_exclusion :
+        (Finset.filter (fun y => G.Adj y e.out.1 ∨ G.Adj y e.out.2)
+          (Finset.univ : Finset V)).card ≥
+          (Finset.filter (fun y => G.Adj y e.out.1) (Finset.univ : Finset V)).card +
+            (Finset.filter (fun y => G.Adj y e.out.2) (Finset.univ : Finset V)).card -
+            (Finset.filter (fun y => y ∈ G.commonNeighbors e.out.1 e.out.2)
+              (Finset.univ : Finset V)).card := by
+      rw [← Finset.card_union_add_card_inter]
+      simp +decide [SimpleGraph.commonNeighbors]
+      simp +decide [Finset.filter_or, Finset.filter_and, SimpleGraph.adj_comm]
+    convert union_inclusion_exclusion using 1
+    simp +decide [SimpleGraph.degree, SimpleGraph.neighborFinset_def]
+    simp +decide only [adj_comm]
+  have commonNeighbors_card_eq_triangleDegree :
+      (Finset.filter (fun y => y ∈ G.commonNeighbors e.out.1 e.out.2)
+        (Finset.univ : Finset V)).card = triangleDegree G e := by
+    exact commonNeighbors_card_eq_triangleDegree_edge G e
+  grind +splitIndPred
+
 /-
 Core injection-based counting bound, extracted from Bollobás-Nikiforov Theorem 1.
 
@@ -321,6 +400,9 @@ In the notation
 `β = maxTriangleDegree`, the bound is
 `n * k₃ + β * D ≤ β * n * m + 2 * β * S`.
 -/
+-- This proof contains the main finite-set encoding of the combinatorial
+-- injection. The heartbeat bump avoids timeouts in the large `simp`/`grind`
+-- blocks handling `Sym2` and filtered products.
 set_option maxHeartbeats 800000 in
 lemma injection_counting_bound [DecidableEq V]
     (G : SimpleGraph V) [DecidableRel G.Adj] :
@@ -372,10 +454,12 @@ lemma injection_counting_bound [DecidableEq V]
                   (p.2 ∈ G.commonNeighbors e.out.1 e.out.2 ∨
                     (¬G.Adj p.2 e.out.1 ∧ ¬G.Adj p.2 e.out.2)))
               (G.cliqueFinset 3 ×ˢ Finset.univ)).card ≤
-            (triangleDegree G e) *
+              (triangleDegree G e) *
               (Fintype.card V + 2 * (triangleDegree G e) -
                 G.degree e.out.1 - G.degree e.out.2) := by
       intro e he
+      have concordant_vertex_count_le :=
+        concordant_vertex_count_le_card_add_two_mul_triangleDegree_sub_degree G e
       have triangle_count_through_edge_le :
           (Finset.filter (fun T => e ∈ T.sym2) (G.cliqueFinset 3)).card ≤
             triangleDegree G e := by
@@ -400,59 +484,7 @@ lemma injection_counting_bound [DecidableEq V]
           · grind
         refine' le_trans (Finset.card_le_card triangle_to_commonNeighbor) _
         exact Finset.card_image_le
-      have concordant_vertex_count_le :
-          (Finset.filter
-              (fun y =>
-                y ∈ G.commonNeighbors e.out.1 e.out.2 ∨
-                  (¬G.Adj y e.out.1 ∧ ¬G.Adj y e.out.2))
-              (Finset.univ : Finset V)).card ≤
-            Fintype.card V + 2 * (triangleDegree G e) -
-              G.degree e.out.1 - G.degree e.out.2 := by
-        have concordant_split_bound :
-            (Finset.filter
-                (fun y =>
-                  y ∈ G.commonNeighbors e.out.1 e.out.2 ∨
-                    (¬G.Adj y e.out.1 ∧ ¬G.Adj y e.out.2))
-                (Finset.univ : Finset V)).card ≤
-              (Finset.univ : Finset V).card -
-                (Finset.filter (fun y => G.Adj y e.out.1 ∨ G.Adj y e.out.2)
-                  (Finset.univ : Finset V)).card +
-                (Finset.filter (fun y => y ∈ G.commonNeighbors e.out.1 e.out.2)
-                  (Finset.univ : Finset V)).card := by
-          rw [tsub_add_eq_add_tsub]
-          · refine' le_tsub_of_add_le_left _
-            rw [← Finset.card_union_add_card_inter]
-            refine' add_le_add _ _
-            · exact Finset.card_le_univ _
-            · refine' Finset.card_le_card _
-              intro y hy
-              aesop
-          · exact Finset.card_le_univ _
-        have union_neighbors_card_ge :
-            (Finset.filter (fun y => G.Adj y e.out.1 ∨ G.Adj y e.out.2)
-              (Finset.univ : Finset V)).card ≥
-              G.degree e.out.1 + G.degree e.out.2 -
-                (Finset.filter (fun y => y ∈ G.commonNeighbors e.out.1 e.out.2)
-                  (Finset.univ : Finset V)).card := by
-          have union_inclusion_exclusion :
-              (Finset.filter (fun y => G.Adj y e.out.1 ∨ G.Adj y e.out.2)
-                (Finset.univ : Finset V)).card ≥
-                (Finset.filter (fun y => G.Adj y e.out.1) (Finset.univ : Finset V)).card +
-                  (Finset.filter (fun y => G.Adj y e.out.2) (Finset.univ : Finset V)).card -
-                  (Finset.filter (fun y => y ∈ G.commonNeighbors e.out.1 e.out.2)
-                    (Finset.univ : Finset V)).card := by
-            rw [← Finset.card_union_add_card_inter]
-            simp +decide [SimpleGraph.commonNeighbors]
-            simp +decide [Finset.filter_or, Finset.filter_and, SimpleGraph.adj_comm]
-          convert union_inclusion_exclusion using 1
-          simp +decide [SimpleGraph.degree, SimpleGraph.neighborFinset_def]
-          simp +decide only [adj_comm]
-        have commonNeighbors_card_eq_triangleDegree :
-            (Finset.filter (fun y => y ∈ G.commonNeighbors e.out.1 e.out.2)
-              (Finset.univ : Finset V)).card = triangleDegree G e := by
-          exact commonNeighbors_card_eq_triangleDegree_edge G e
-        grind +splitIndPred
-      refine' le_trans _ (Nat.mul_le_mul ‹_› concordant_vertex_count_le)
+      refine' le_trans _ (Nat.mul_le_mul triangle_count_through_edge_le concordant_vertex_count_le)
       rw [← Finset.card_product]
       exact Finset.card_le_card fun p hp => by aesop
     have total_pair_count_le :
@@ -552,8 +584,7 @@ handshaking lemma, and the Turán bound. The key steps are:
 -/
 theorem bollobas_nikiforov_of_card_gt
     (G : SimpleGraph V) [DecidableRel G.Adj]
-    (h : Fintype.card V ^ 2 / 4 < G.edgeFinset.card)
-    (_h_case : 3 * maxTriangleDegree G < Fintype.card V) :
+    (h : Fintype.card V ^ 2 / 4 < G.edgeFinset.card) :
     3 * ∑ v : V, G.degree v ^ 2 ≤
       6 * G.edgeFinset.card * maxTriangleDegree G +
         2 * Fintype.card V * G.edgeFinset.card := by
@@ -614,7 +645,7 @@ theorem bollobas_nikiforov
         2 * Fintype.card V * G.edgeFinset.card := by
   by_cases h_case : Fintype.card V ≤ 3 * maxTriangleDegree G
   · exact bollobas_nikiforov_of_card_le G h_case
-  · exact bollobas_nikiforov_of_card_gt G h (lt_of_not_ge h_case)
+  · exact bollobas_nikiforov_of_card_gt G h
 
 /-- Arithmetic consequence of the Bollobás-Nikiforov inequality:
 `n < 6 * f₃`. -/
@@ -689,6 +720,10 @@ Khadžiivanov-Nikiforov in 1979).
 
 Every graph on `n` vertices with more than `⌊n^2 / 4⌋` edges contains an edge
 which lies in at least `n / 6` triangles.
+
+The proof uses the auxiliary inequality `bollobas_nikiforov`, then translates
+the resulting bound on `maxTriangleDegree G` into the existence of an edge that
+attains this maximum.
 -/
 theorem erdos_905 (G : SimpleGraph V) [DecidableRel G.Adj]
     (h : Fintype.card V ^ 2 / 4 < G.edgeFinset.card) :
