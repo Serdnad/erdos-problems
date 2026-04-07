@@ -240,6 +240,79 @@ lemma degree_add_degree_le_card_add_two_mul_triangleDegree
   have := degree_add_degree_le_card_add_commonNeighbors G u v
   omega
 
+lemma commonNeighbors_card_eq_triangleDegree_edge
+    (G : SimpleGraph V) [DecidableRel G.Adj] [DecidableEq V] (e : Sym2 V) :
+    (Finset.filter (fun y => y ∈ G.commonNeighbors e.out.1 e.out.2)
+      (Finset.univ : Finset V)).card = triangleDegree G e := by
+  convert triangleDegree_mk G (Quot.out e).1 (Quot.out e).2 using 1
+  · convert rfl
+    convert triangleDegree_mk G (Quot.out e).1 (Quot.out e).2 using 1
+    rw [Fintype.card_of_subtype]
+    aesop
+  · exact congr_arg _ (by exact Eq.symm (Quot.out_eq e))
+
+lemma edge_degree_add_degree_le_card_add_two_mul_triangleDegree
+    (G : SimpleGraph V) [DecidableRel G.Adj] [DecidableEq V] (e : Sym2 V) :
+    G.degree e.out.1 + G.degree e.out.2 ≤
+      Fintype.card V + 2 * triangleDegree G e := by
+  have h_deg := degree_add_degree_le_card_add_two_mul_triangleDegree G e.out.1 e.out.2
+  have h_card :
+      Fintype.card (G.commonNeighbors e.out.1 e.out.2) = triangleDegree G e := by
+    simpa [Fintype.card_ofFinset] using commonNeighbors_card_eq_triangleDegree_edge G e
+  omega
+
+/-! ### Endpoint-degree identities -/
+
+lemma edge_endpoint_degree_sum_eq_indicator_sum
+    (G : SimpleGraph V) [DecidableRel G.Adj] [DecidableEq V] :
+    ∑ e ∈ G.edgeFinset, (G.degree e.out.1 + G.degree e.out.2) =
+      ∑ v : V, ∑ e ∈ G.edgeFinset, (if v ∈ e then G.degree v else 0) := by
+  classical
+  rw [Finset.sum_comm, Finset.sum_congr rfl]
+  intro e he
+  have h_edge_repr : e = s(e.out.1, e.out.2) := by
+    exact Eq.symm (Quot.out_eq e)
+  rw [h_edge_repr, Finset.sum_ite]
+  rw [Finset.sum_eq_add (Quot.out e |>.1) (Quot.out e |>.2)] <;> simp +decide
+  · rw [← h_edge_repr]
+  · intro h
+    rw [h_edge_repr] at he
+    simp +decide [h] at he
+  · grind +revert
+  · exact fun h => False.elim <| h <| h_edge_repr.symm ▸ Sym2.mem_iff.mpr (by simp +decide)
+  · exact fun h => False.elim <| h <| h_edge_repr.symm ▸ Sym2.mem_iff.mpr (by simp +decide)
+
+lemma edge_endpoint_degree_sum_eq_neighbor_sum
+    (G : SimpleGraph V) [DecidableRel G.Adj] [DecidableEq V] :
+    ∑ e ∈ G.edgeFinset, (G.degree e.out.1 + G.degree e.out.2) =
+      ∑ v : V, ∑ _ ∈ G.neighborFinset v, G.degree v := by
+  classical
+  rw [edge_endpoint_degree_sum_eq_indicator_sum]
+  refine Finset.sum_congr rfl ?_
+  intro v hv
+  calc
+    (∑ e ∈ G.edgeFinset, if v ∈ e then G.degree v else 0)
+        = ∑ e ∈ G.edgeFinset.filter (fun e => v ∈ e), G.degree v := by
+            rw [Finset.sum_filter]
+    _ = ∑ e ∈ G.incidenceFinset v, G.degree v := by
+          rw [SimpleGraph.incidenceFinset_eq_filter]
+    _ = G.degree v * G.degree v := by
+          rw [Finset.sum_const_nat (m := G.degree v) (f := fun _ => G.degree v)]
+          · rw [SimpleGraph.card_incidenceFinset_eq_degree, mul_comm]
+          · intro x hx
+            rfl
+    _ = ∑ u ∈ G.neighborFinset v, G.degree v := by
+          rw [Finset.sum_const_nat (m := G.degree v) (f := fun _ => G.degree v)]
+          · rw [SimpleGraph.degree, mul_comm]
+          · intro x hx
+            rfl
+
+lemma edge_endpoint_degree_sum_eq_sum_sq
+    (G : SimpleGraph V) [DecidableRel G.Adj] [DecidableEq V] :
+    ∑ e ∈ G.edgeFinset, (G.degree e.out.1 + G.degree e.out.2) =
+      ∑ v : V, G.degree v ^ 2 := by
+  simp +decide [edge_endpoint_degree_sum_eq_neighbor_sum, pow_two]
+
 /-
 Core injection-based counting bound, extracted from Bollobás-Nikiforov Theorem 1.
 
@@ -377,12 +450,7 @@ lemma injection_counting_bound [DecidableEq V]
         have commonNeighbors_card_eq_triangleDegree :
             (Finset.filter (fun y => y ∈ G.commonNeighbors e.out.1 e.out.2)
               (Finset.univ : Finset V)).card = triangleDegree G e := by
-          convert triangleDegree_mk G (Quot.out e |>.1) (Quot.out e |>.2) using 1
-          · convert rfl
-            convert triangleDegree_mk G (Quot.out e |>.1) (Quot.out e |>.2) using 1
-            rw [Fintype.card_of_subtype]
-            aesop
-          · exact congr_arg _ (by exact Eq.symm (Quot.out_eq e))
+          exact commonNeighbors_card_eq_triangleDegree_edge G e
         grind +splitIndPred
       refine' le_trans _ (Nat.mul_le_mul ‹_› concordant_vertex_count_le)
       rw [← Finset.card_product]
@@ -426,49 +494,12 @@ lemma injection_counting_bound [DecidableEq V]
           (Fintype.card V + 2 * (triangleDegree G e) - G.degree e.out.1 - G.degree e.out.2) +
         ∑ v : V, G.degree v ^ 2 =
       Fintype.card V * G.edgeFinset.card + 2 * ∑ e ∈ G.edgeFinset, (triangleDegree G e) := by
-    have edge_endpoint_degree_sum_eq_sum_sq (G : SimpleGraph V) [DecidableRel G.Adj] :
-        ∑ e ∈ G.edgeFinset, (G.degree e.out.1 + G.degree e.out.2) =
-          ∑ v : V, G.degree v ^ 2 := by
-      have edge_endpoint_degree_sum_eq_neighbor_sum
-          (G : SimpleGraph V) [DecidableRel G.Adj] :
-          ∑ e ∈ G.edgeFinset, (G.degree e.out.1 + G.degree e.out.2) =
-            ∑ v : V, ∑ u ∈ G.neighborFinset v, G.degree v := by
-        have edge_endpoint_degree_sum_eq_indicator_sum
-            (G : SimpleGraph V) [DecidableRel G.Adj] :
-            ∑ e ∈ G.edgeFinset, (G.degree e.out.1 + G.degree e.out.2) =
-              ∑ v : V, ∑ e ∈ G.edgeFinset,
-                (if v ∈ e then G.degree v else 0) := by
-          rw [Finset.sum_comm, Finset.sum_congr rfl]
-          intro e he
-          have h_edge_repr : e = s(e.out.1, e.out.2) := by
-            exact Eq.symm (Quot.out_eq e)
-          rw [h_edge_repr, Finset.sum_ite]
-          rw [Finset.sum_eq_add (Quot.out e |>.1) (Quot.out e |>.2)] <;> simp +decide
-          · rw [← h_edge_repr]
-          · intro h
-            rw [h_edge_repr] at he
-            simp +decide [h] at he
-          · grind +revert
-          · exact fun h => False.elim <| h <| h_edge_repr.symm ▸ Sym2.mem_iff.mpr (by simp +decide)
-          · exact fun h => False.elim <| h <| h_edge_repr.symm ▸ Sym2.mem_iff.mpr (by simp +decide)
-        simp_all +decide [Finset.sum_ite]
-        refine' Finset.sum_congr rfl fun v hv => _
-        rw [mul_comm, ← SimpleGraph.card_incidenceFinset_eq_degree]
-        congr! 2
-        ext e
-        simp [SimpleGraph.incidenceSet]
-      simp +decide [edge_endpoint_degree_sum_eq_neighbor_sum, pow_two]
     have endpoint_degree_sum_le_concordant_bound :
         ∀ x ∈ G.edgeFinset,
-          G.degree (Quot.out x).1 + G.degree (Quot.out x).2 ≤
+          G.degree x.out.1 + G.degree x.out.2 ≤
             Fintype.card V + 2 * triangleDegree G x := by
       intro x hx
-      convert degree_add_degree_le_card_add_two_mul_triangleDegree G
-        (Quot.out x).1 (Quot.out x).2 using 1
-      rw [← triangleDegree_mk]
-      congr! 2
-      congr! 1
-      exact Eq.symm (Quot.out_eq x)
+      exact edge_degree_add_degree_le_card_add_two_mul_triangleDegree G x
     rw [← edge_endpoint_degree_sum_eq_sum_sq G, Finset.mul_sum _ _ _]
     rw [← Finset.sum_add_distrib]
     rw [Finset.sum_congr rfl fun x hx => by
